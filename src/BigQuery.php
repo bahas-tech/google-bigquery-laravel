@@ -12,46 +12,46 @@ use Illuminate\Support\Facades\DB;
 class BigQuery
 {
     use BigQuerySqlTrait;
-    
+
     /**
      * @var BigQueryClient
      */
     public $db;
-    
+
     /**
      * @database config
      */
     public $config;
-    
+
     /**
      * @var array
      */
     public $options;
-    
+
     /**
      * @var string
      */
     public $defaultDataset;
-    
+
     /**
      * Setup our Big wrapper with Google's BigQuery service
      */
     public function __construct()
     {
         if (is_null($this->db)) {
-            $configPath = base_path('config/google_big_query.json');
+            $configPath = config('google_big_query.credentials', base_path('config/google_big_query.json'));
             $config = json_decode(\File::get($configPath), true);
-            
+
             $this->db = new BigQueryClient([
                 'keyFilePath' => $configPath,
-                'projectId' => $config['project_id']
+                'projectId' => config('google_big_query.project_id', $config['project_id']),
             ]);
-            
+
             $this->config = config('google_big_query');
             $this->defaultDataset = $this->config['database'];
         }
     }
-    
+
     /**
      * @param $dataSet
      * @return \Google\Cloud\BigQuery\Dataset
@@ -60,7 +60,7 @@ class BigQuery
     {
         return $this->db->dataset($this->getDataSet($dataSet));
     }
-    
+
     /**
      * @param $dataSet
      * @return mixed
@@ -69,10 +69,10 @@ class BigQuery
     {
         $name = $this->getDataSet($dataSet);
         $this->db->createDataset($name);
-        
+
         return $name;
     }
-    
+
     /**
      * @param $table
      * @param $fields
@@ -81,30 +81,26 @@ class BigQuery
      */
     public function createTable($table, $fields, $dataSet = null)
     {
-        try {
-            $dataSet = $this->dataSet($dataSet);
-            
-            $dataSet->createTable($table, [
-                'id' => 'string',
-                'streamingBuffer' => false,
-                'schema' => [
-                    'fields' => array_merge(
+        $dataSet = $this->dataSet($dataSet);
+
+        $dataSet->createTable($table, [
+            'id' => 'string',
+            'streaming_buffer' => false,
+            'schema' => [
+                'fields' => array_merge(
+                    [
                         [
-                            [
-                                'name' => 'id',
-                                'type' => 'integer',
-                                'mode' => 'required'
-                            ]
-                        ],
-                        $fields
-                    )
-                ]
-            ]);
-        } catch (\Exception $e) {
-            throw $this->getError($e);
-        }
+                            'name' => 'id',
+                            'type' => 'integer',
+                            'mode' => 'required'
+                        ]
+                    ],
+                    $fields
+                )
+            ]
+        ]);
     }
-    
+
     /**
      * @param $table
      * @param $dataSet
@@ -112,15 +108,11 @@ class BigQuery
      */
     public function deleteTable($table, $dataSet = null)
     {
-        try {
-            $dataSet = $this->dataSet($dataSet);
-            $table = $dataSet->table($table);
-            $table->delete();
-        } catch (\Exception $e) {
-            return $this->getError($e);
-        }
+        $dataSet = $this->dataSet($dataSet);
+        $table = $dataSet->table($table);
+        $table->delete();
     }
-    
+
     /**
      * @param $e
      * @return mixed
@@ -129,7 +121,7 @@ class BigQuery
     {
         return json_decode($e->getMessage(), true);
     }
-    
+
     /**
      * @return array
      */
@@ -140,10 +132,10 @@ class BigQuery
         foreach ($dataSets as $dataSet) {
             $list[] = $dataSet->id();
         }
-        
+
         return $list;
     }
-    
+
     /**
      * Check on exist dataSet
      *
@@ -154,7 +146,7 @@ class BigQuery
     {
         return in_array($this->getDataSet($dataSet), $this->getDataSets());
     }
-    
+
     /**
      * Wrap around Google's BigQuery run method and handle results
      *
@@ -168,7 +160,7 @@ class BigQuery
     {
         return collect($this->getQuery($builder, $selectWith, $options));
     }
-    
+
     /**
      * Wrap around Google's BigQuery run method and handle results
      *
@@ -182,7 +174,7 @@ class BigQuery
     {
         return $this->getQuery($builder, $selectWith, $options);
     }
-    
+
     /**
      * Wrap around Google's BigQuery run method and handle results
      *
@@ -195,11 +187,11 @@ class BigQuery
     public function first($builder, $selectWith = [], $options = [])
     {
         $res = $this->getQuery($builder->limit(1), $selectWith, $options);
-        
+
         return !$res ?: $res[0];
     }
-    
-    
+
+
     /**
      * @param $builder
      * @param $selectWith
@@ -210,13 +202,13 @@ class BigQuery
     public function getQuery($builder, $selectWith, $options)
     {
         $aliases = $this->selectWitch($builder, $selectWith);
-        
+
         // Set default options if nothing is passed in
         $queryResults = $this->db->runQuery(
             $this->db->query(is_string($builder) ? $builder : $this->getSql($builder)),
             $options ?? $this->options
         );
-        
+
         // Setup our result checks
         $isComplete = $queryResults->isComplete();
         while (!$isComplete) {
@@ -224,7 +216,7 @@ class BigQuery
             $queryResults->reload(); // trigger a network request
             $isComplete = $queryResults->isComplete(); // check the query's status
         }
-        
+
         // Mutate into a laravel collection
         $data = [];
         foreach ($queryResults->rows() as $row) {
@@ -239,13 +231,13 @@ class BigQuery
                     }
                 }
             } else {
-                $data[] = (object)$row;
+                $data[] = $row;
             }
         }
-        
+
         return $data;
     }
-    
+
     /**
      * @param $builder
      * @param $selectWith
@@ -259,37 +251,37 @@ class BigQuery
             foreach ($selectWith as $sk => $with) {
                 if ($sk !== 'uids') {
                     $alias = explode('->', $sk);
-                    
+
                     array_walk(
                         $selectWith[$sk],
                         function ($val) use (&$select, $alias) {
                             $select[] = $alias[0] . '.' . $val;
                         }
                     );
-                    
+
                     foreach ($with as $field) {
                         $pref = explode(' as ', $field);
                         $pref = isset($pref[1]) ? $pref[1] : $pref[0];
-                        
+
                         $aliases[$pref] = isset($alias[1]) ? $alias[1] : '';
                     }
                 }
             }
-            
+
             $builder->select($select);
-            
+
             return $aliases;
         }
     }
-    
+
     /**
      *
      */
     public function rowArray()
     {
-    
+
     }
-    
+
     /**
      * Wrap around Google's BigQuery insert method
      *
@@ -304,26 +296,26 @@ class BigQuery
     {
         $dataSet = $this->db->dataset($this->config['database']);
         $dataSet = $dataSet->table($table);
-        
+
         // Set default options if nothing is passed in
         $insertResponse = $dataSet->insertRows(
             $this->prepareData($rows, $this->getMaxId($table)),
             $options ?? ['ignoreUnknownValues' => true]
         );
-        
+
         if (!$insertResponse->isSuccessful()) {
             foreach ($insertResponse->failedRows() as $row) {
                 foreach ($row['errors'] as $error) {
                     $errors[] = $error;
                 }
             }
-            
+
             return $errors ?? [];
         }
-        
+
         return true;
     }
-    
+
     /**
      * @param $query
      * @return \Google\Cloud\BigQuery\QueryResults
@@ -332,8 +324,8 @@ class BigQuery
     {
         return $this->db->runQuery($this->db->query($query));
     }
-    
-    
+
+
     /**
      * @param null $dataSet
      * @return array
@@ -341,15 +333,15 @@ class BigQuery
     public function getTables($dataSet = null)
     {
         $tables = $this->db->dataset($this->getDataSet($dataSet))->tables();
-        
+
         $res = [];
         foreach ($tables as $table) {
             $res[] = $table->id();
         }
-        
+
         return $res;
     }
-    
+
     /**
      * @param \Illuminate\Database\Eloquent\Collection|\Illuminate\Support\Collection|array $data
      *
@@ -361,7 +353,7 @@ class BigQuery
         // We loop our data and handle object conversion to an array
         foreach ($data as $item) {
             $lastId++;
-            
+
             if (!is_array($item)) {
                 $item = (array)$item;
             }
@@ -378,16 +370,16 @@ class BigQuery
                     }
                 }
             }
-            
+
             if (!isset($item['id'])) {
                 $item['id'] = $lastId;
             }
-            
+
             // If we have an id column use Google's insertId
             // https://cloud.google.com/bigquery/streaming-data-into-bigquery#dataconsistency
             if (in_array('id', $item)) {
                 $rowData = [
-                    'insertId' => $item['id'],
+//                    'insertId' => $item['id'],
                     'data' => $item,
                     'fields' => $struct,
                 ];
@@ -400,10 +392,10 @@ class BigQuery
             }
             $preparedData[] = $rowData;
         }
-        
+
         return $preparedData;
     }
-    
+
     /**
      * Wrapper function around the BigQuery create_table() function.
      * We also have the benefit of mutating a Laravel Eloquent Model into a proper field map for automation
@@ -436,27 +428,27 @@ class BigQuery
     {
         // Check if we have this table
         $table = in_array($tableId, $this->getTables($datasetId));
-        
+
         // If this table has been created, return it
         if ($table instanceof Table) {
             return $table;
         }
-        
+
         // Generate a new dataset
         $dataset = $this->db->dataset($datasetId);
         // Flip our Eloquent model into a BigQuery schema map
         $options = ['schema' => static::flipModel($model, $structs)];
         // Create the table
         $table = $dataset->createTable($tableId, $options);
-        
+
         // New tables are not instantly available, we will insert a delay to help the developer
         if ($useDelay) {
             sleep(10);
         }
-        
+
         return $table;
     }
-    
+
     /**
      * Flip a Laravel Eloquent Models into a Big Query Schemas
      *
@@ -472,7 +464,7 @@ class BigQuery
         if (!$model instanceof Model) {
             throw new Exception(__METHOD__ . ' requires a Eloquent model, ' . get_class($model) . ' used.');
         }
-        
+
         // Cache name based on table
         $cacheName = __CLASS__ . '.cache.' . $model->getTable();
         // Cache duration
@@ -481,11 +473,11 @@ class BigQuery
         $fields = Cache::remember($cacheName, $liveFor, function () use ($model) {
             return DB::select('describe ' . $model->getTable());
         });
-        
+
         // Loop our fields and return a Google BigQuery field map array
         return ['fields' => static::fieldMap($fields, $structs)];
     }
-    
+
     /**
      * Map our fields to BigQuery compatible data types
      *
@@ -573,11 +565,11 @@ class BigQuery
             }
             $map[] = $fieldData;
         }
-        
+
         // Return our map
         return $map;
     }
-    
+
     /**
      * Return the max ID
      *
@@ -590,10 +582,10 @@ class BigQuery
     {
         // Run our max ID query
         $id = $this->get('SELECT MAX(id) id FROM ' . $this->getDataSet($dataSet) . '.' . $table)->first()['id'];
-        
+
         return $id ? $id : 0;
     }
-    
+
     /**
      * Return the max created_at date
      *
@@ -609,7 +601,7 @@ class BigQuery
             'SELECT max(created_at) created_at FROM `' . $this->getDataSet($dataSet) . '.' . $table . '`'
         )->first()['created_at'];
     }
-    
+
     /**
      * Return the max of field
      *
@@ -626,7 +618,7 @@ class BigQuery
             'SELECT max(' . $field . ') ' . $field . ' FROM `' . $this->getDataSet($dataSet) . '.' . $table . '`'
         )->first()[$field];
     }
-    
+
     /**
      * @param $dataSet
      * @return mixed|string
