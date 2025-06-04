@@ -113,10 +113,8 @@ trait DatabaseMigrationRepository
         resolve('BigQuery')
             ->insert('migrations', [
                 [
-                    'data' => [
-                        'migration' => $name,
-                        'batch' => $batch,
-                    ],
+                    'migration' => $name,
+                    'batch' => $batch,
                 ],
             ]);
     }
@@ -175,7 +173,6 @@ trait DatabaseMigrationRepository
             // The migrations table is responsible for keeping track of which of the
             // migrations have actually run for the application. We'll create the
             // table to hold the migration file's path as well as the batch ID.
-            $table->increments('id');
             $table->string('migration');
             $table->integer('batch');
         });

@@ -377,9 +377,9 @@ class BigQuery
 
             // If we have an id column use Google's insertId
             // https://cloud.google.com/bigquery/streaming-data-into-bigquery#dataconsistency
-            if (in_array('id', $item)) {
+            if (array_key_exists('id', $item)) {
                 $rowData = [
-//                    'insertId' => $item['id'],
+                    'insertId' => $item['id'],
                     'data' => $item,
                     'fields' => $struct,
                 ];
