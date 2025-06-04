@@ -46,6 +46,7 @@ class MigrateCommand extends Command
         parent::__construct();
 
         $this->migrator = resolve('BigQueryMigrator');
+        $this->migrator->setOutput($this->output);
     }
 
     /**
