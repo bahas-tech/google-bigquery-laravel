@@ -46,7 +46,6 @@ class MigrateCommand extends Command
         parent::__construct();
 
         $this->migrator = resolve('BigQueryMigrator');
-        $this->migrator->setOutput($this->output);
     }
 
     /**
@@ -56,6 +55,7 @@ class MigrateCommand extends Command
      */
     public function handle()
     {
+        $this->migrator->setOutput($this->output);
         $bigQuery = resolve('BigQuery');
 
 //        if (! $this->confirmToProceed()) {
